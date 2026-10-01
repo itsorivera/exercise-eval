@@ -28,6 +28,23 @@ class AnalysisQueryRequest(BaseModel):
     )
 
 
+class BudgetStatus(BaseModel):
+    """Consumo y saldo de los límites de la ejecución."""
+
+    max_budget_usd: float
+    max_steps: int
+    max_tokens_budget: int
+    timeout_global_seconds: float
+    spent_usd: float = Field(..., ge=0)
+    remaining_usd: float = Field(..., ge=0, description="Saldo de presupuesto en USD.")
+    steps_used: int = Field(..., ge=0)
+    remaining_steps: int = Field(..., ge=0)
+    tokens_used: int = Field(..., ge=0)
+    remaining_tokens: int = Field(..., ge=0)
+    elapsed_time: float = Field(..., ge=0)
+    remaining_time: float = Field(..., ge=0)
+
+
 class AnalysisQueryResponse(BaseModel):
     analyst_id: str
     session_id: str
@@ -38,8 +55,9 @@ class AnalysisQueryResponse(BaseModel):
     total_tokens: int = Field(..., ge=0)
     total_cost_usd: float = Field(..., ge=0)
     elapsed_time: float = Field(..., ge=0)
+    budget: BudgetStatus = Field(..., description="Consumo y saldo de los límites de la ejecución.")
     stop_reason: Optional[str] = Field(
         default=None,
-        description="Límite que se agotó: budget, tokens, max_steps, timeout o error.",
+        description="Límite que se agotó: budget, tokens, max_steps, timeout, loop_detected o error.",
     )
     warnings: List[str] = Field(default_factory=list)
