@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+import logging
+import os
 from src.adapter.rest.server_router import router as financial_fleet_agent_router
+
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
 def create_app() -> FastAPI:
     app = FastAPI(
