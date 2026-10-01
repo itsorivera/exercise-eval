@@ -1,5 +1,6 @@
 from contextlib import aclosing
 import asyncio
+import logging
 from typing import Any, List, Optional, Tuple
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -14,10 +15,16 @@ from src.core.budget.budget_tracker import (
     TIMEOUT_GLOBAL_SECONDS,
     BudgetTracker,
 )
-from src.core.models.analysis import AnalysisQueryRequest, AnalysisQueryResponse
+from src.core.models.analysis import (
+    AnalysisQueryRequest,
+    AnalysisQueryResponse,
+    StepMetric,
+)
 from src.core.ports.agent_port import AgentPort
 from src.core.ports.llm_provider_port import LLMProviderPort
 from src.core.ports.stm_port import STMProviderPort
+
+logger = logging.getLogger(__name__)
 
 
 class LangChainAgentAdapter(AgentPort):
@@ -113,11 +120,13 @@ class LangChainAgentAdapter(AgentPort):
 
                     message = messages[-1]
                     input_tokens, output_tokens = self._extract_usage(message)
-                    tracker.register_step(
+                    metric = tracker.register_step(
                         tool_called=self._first_tool_call(message),
                         input_tokens=input_tokens,
                         output_tokens=output_tokens,
+                        tool_args=self._first_tool_args(message),
                     )
+                    self._log_step(request, tracker, metric)
 
                     stop_reason = tracker.limit_reached()
                     if stop_reason:
@@ -135,7 +144,7 @@ class LangChainAgentAdapter(AgentPort):
         tracker.mark_stopped(STOP_REASON_ERROR)
         raise
 
-    return AnalysisQueryResponse(
+    response = AnalysisQueryResponse(
         analyst_id=request.analyst_id,
         session_id=request.session_id,
         answer=answer or self._partial_answer(tracker),
@@ -145,8 +154,50 @@ class LangChainAgentAdapter(AgentPort):
         total_tokens=tracker.total_tokens,
         total_cost_usd=tracker.total_cost_usd,
         elapsed_time=tracker.elapsed_time,
+        budget=tracker.status(),
         stop_reason=tracker.stop_reason,
         warnings=tracker.warnings,
+    )
+
+    self._log_summary(request, response)
+    return response
+
+  def _log_step(self,
+                request: AnalysisQueryRequest,
+                tracker: BudgetTracker,
+                metric: StepMetric) -> None:
+    logger.info(
+        "finops_step analyst_id=%s session_id=%s step=%d tool=%s tokens_used=%d "
+        "cumulative_cost_usd=%.6f elapsed_s=%.4f remaining_usd=%.6f remaining_tokens=%d "
+        "remaining_steps=%d remaining_s=%.2f",
+        request.analyst_id,
+        request.session_id,
+        metric.step_number,
+        metric.tool_called or "none",
+        metric.tokens_used,
+        metric.cumulative_cost,
+        metric.elapsed_time,
+        tracker.remaining_budget_usd,
+        tracker.remaining_tokens,
+        tracker.remaining_steps,
+        tracker.remaining_time,
+    )
+
+  def _log_summary(self,
+                   request: AnalysisQueryRequest,
+                   response: AnalysisQueryResponse) -> None:
+    logger.info(
+        "finops_summary analyst_id=%s session_id=%s completed=%s stop_reason=%s steps=%d "
+        "tokens=%d cost_usd=%.6f elapsed_s=%.4f warnings=%d",
+        response.analyst_id,
+        response.session_id,
+        response.completed,
+        response.stop_reason or "none",
+        response.steps_used,
+        response.total_tokens,
+        response.total_cost_usd,
+        response.elapsed_time,
+        len(response.warnings),
     )
 
   def _normalize_chunk(self, chunk: Any) -> Tuple[str, Any]:
@@ -175,6 +226,13 @@ class LangChainAgentAdapter(AgentPort):
         return None
     name = tool_calls[0].get("name")
     return name if isinstance(name, str) and name else "unknown"
+
+  def _first_tool_args(self, message: Any) -> Optional[dict]:
+    tool_calls = getattr(message, "tool_calls", None) or []
+    if not tool_calls:
+        return None
+    args = tool_calls[0].get("args")
+    return args if isinstance(args, dict) else None
 
   def _as_text(self, content: Any) -> str:
     if isinstance(content, str):
