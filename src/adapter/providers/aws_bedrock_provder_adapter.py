@@ -1,4 +1,4 @@
-from src.core.ports.llm_provier_port import LLMProviderPort
+from src.core.ports.llm_provider_port import LLMProviderPort
 import os
 import boto3
 from langchain_aws import ChatBedrockConverse
