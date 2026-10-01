@@ -6,13 +6,13 @@ from src.core.ports.stm_port import STMProviderPort
 from src.adapter.memory.postgres_stm_adapter import PostgresSTMAdapter
 from src.core.ports.agent_port import AgentPort
 from src.adapter.agent.langchain_agent_adapter import LangChainAgentAdapter
+from src.core.tools.local_tools import FINANCIAL_ANALYST_TOOLS
 
 class DependenciesContainer:
     def __init__(self):
         self.llm_provider: Optional[LLMProviderPort] = None
         self.stm: Optional[STMProviderPort] = None
         self.agent_1: Optional[AgentPort] = None
-        self.agent_2: Optional[AgentPort] = None
 
     def get_llm_provider(self) -> LLMProviderPort:
         if self.llm_provider is None:
@@ -36,7 +36,8 @@ class DependenciesContainer:
                 """Eres un agente que que ayudas con la evaluación de indicadores clave, ratios financieros y tendencias de desempeño.
                 Los analistas realizan consultas complejas sobre múltiples periodos financieros y esperan obtener resultados rápidos, precisos y con costos controlados para apoyar la toma de decisiones de inversión.""",
                 llm_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
-                stm=stm,
+                stm_provider=stm,
+                tools=FINANCIAL_ANALYST_TOOLS
             )
             await self.agent_1.create_agent()
         return self.agent_1
